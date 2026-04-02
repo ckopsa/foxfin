@@ -172,6 +172,22 @@ struct NowPlayingView: View {
             .buttonStyle(.plain)
         }
         .padding()
+        .contextMenu {
+            if audioEngine.currentTrack != nil {
+                Button("Start Radio from This Song") {
+                    guard let id = audioEngine.currentTrack?.id else { return }
+                    Task { await startInstantMix(for: id) }
+                }
+            }
+        }
+    }
+
+    private func startInstantMix(for itemId: String) async {
+        if case .success(let items) = await jellyfinClient.fetchInstantMix(for: itemId) {
+            let mixTracks = items.compactMap { baseItemToTrack($0, jellyfinClient: jellyfinClient) }
+            guard !mixTracks.isEmpty else { return }
+            audioEngine.playQueue(tracks: mixTracks)
+        }
     }
 
     private var artURL: URL? {
@@ -312,6 +328,11 @@ struct LibraryBrowserView: View {
                 }
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                Button("Start Radio") {
+                    Task { await startInstantMix(for: track.Id) }
+                }
+            }
         }
     }
 
@@ -360,6 +381,14 @@ struct LibraryBrowserView: View {
         let allTracks = tracks.compactMap { baseItemToTrack($0, jellyfinClient: jellyfinClient) }
         guard let index = allTracks.firstIndex(where: { $0.id == item.Id }) else { return }
         audioEngine.playQueue(tracks: allTracks, startAt: index)
+    }
+
+    private func startInstantMix(for itemId: String) async {
+        if case .success(let items) = await jellyfinClient.fetchInstantMix(for: itemId) {
+            let mixTracks = items.compactMap { baseItemToTrack($0, jellyfinClient: jellyfinClient) }
+            guard !mixTracks.isEmpty else { return }
+            audioEngine.playQueue(tracks: mixTracks)
+        }
     }
 }
 
@@ -413,6 +442,11 @@ struct SongsView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button("Start Radio") {
+                            Task { await startInstantMix(for: song.Id) }
+                        }
+                    }
                 }
             }
         }
@@ -447,6 +481,14 @@ struct SongsView: View {
         let queue = filteredSongs.compactMap { baseItemToTrack($0, jellyfinClient: jellyfinClient) }
         guard let index = queue.firstIndex(where: { $0.id == song.Id }) else { return }
         audioEngine.playQueue(tracks: queue, startAt: index)
+    }
+
+    private func startInstantMix(for itemId: String) async {
+        if case .success(let items) = await jellyfinClient.fetchInstantMix(for: itemId) {
+            let mixTracks = items.compactMap { baseItemToTrack($0, jellyfinClient: jellyfinClient) }
+            guard !mixTracks.isEmpty else { return }
+            audioEngine.playQueue(tracks: mixTracks)
+        }
     }
 }
 

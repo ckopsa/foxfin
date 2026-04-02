@@ -226,6 +226,17 @@ public class JellyfinClient: ObservableObject {
         ])
     }
 
+    // MARK: - Instant Mix
+
+    public func fetchInstantMix(for itemId: String, limit: Int = 50) async -> Result<[BaseItem], JellyfinError> {
+        guard let userId else { return .failure(.notAuthenticated) }
+        return await getItems(path: "/Items/\(itemId)/InstantMix", query: [
+            "userId": userId,
+            "Fields": "MediaSources",
+            "Limit": String(limit),
+        ])
+    }
+
     // MARK: - URLs
 
     public func streamURL(for itemId: String, mediaSourceId: String) -> URL? {
