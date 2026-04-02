@@ -16,28 +16,39 @@ struct JellyfinUser: Codable {
     let Name: String
 }
 
-struct BaseItem: Codable, Identifiable {
-    let Id: String
-    let Name: String
-    let Type: String
-    let AlbumArtist: String?
-    let Album: String?
-    let IndexNumber: Int?
-    let RunTimeTicks: Int64?
-    let MediaSources: [MediaSource]?
+public struct BaseItem: Codable, Identifiable {
+    public let Id: String
+    public let Name: String
+    public let itemType: String
+    public let AlbumArtist: String?
+    public let Album: String?
+    public let IndexNumber: Int?
+    public let RunTimeTicks: Int64?
+    public let MediaSources: [MediaSource]?
 
-    var id: String { Id }
+    enum CodingKeys: String, CodingKey {
+        case Id
+        case Name
+        case itemType = "Type"
+        case AlbumArtist
+        case Album
+        case IndexNumber
+        case RunTimeTicks
+        case MediaSources
+    }
 
-    var durationSeconds: TimeInterval? {
+    public var id: String { Id }
+
+    public var durationSeconds: TimeInterval? {
         guard let ticks = RunTimeTicks else { return nil }
         return TimeInterval(ticks) / 10_000_000
     }
 }
 
-struct MediaSource: Codable {
-    let Id: String
-    let Container: String
-    let Bitrate: Int?
+public struct MediaSource: Codable {
+    public let Id: String
+    public let Container: String
+    public let Bitrate: Int?
 }
 
 struct ItemsResponse: Codable {

@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import JellyfinAPI
 
 /// Sync state for individual offline tracks.
 enum SyncState: String {

@@ -1,35 +1,35 @@
 import Foundation
 
 /// Playback queue with shuffle and repeat modes.
-enum RepeatMode: Equatable {
+public enum RepeatMode: Equatable {
     case off
     case all
     case one
 }
 
-class PlaybackQueue: ObservableObject {
-    @Published var tracks: [Track] = []
-    @Published var currentIndex: Int = -1
-    @Published var shuffleEnabled = false
-    @Published var repeatMode: RepeatMode = .off
+public class PlaybackQueue: ObservableObject {
+    @Published public var tracks: [Track] = []
+    @Published public var currentIndex: Int = -1
+    @Published public var shuffleEnabled = false
+    @Published public var repeatMode: RepeatMode = .off
 
     private var shuffledIndices: [Int] = []
 
-    var currentTrack: Track? {
+    public var currentTrack: Track? {
         let idx = effectiveIndex
         guard idx >= 0, idx < tracks.count else { return nil }
         return tracks[idx]
     }
 
     /// Peek at the next track without advancing.
-    var peekNext: Track? {
+    public var peekNext: Track? {
         let next = nextIndex
         guard next >= 0, next < tracks.count else { return nil }
         return tracks[next]
     }
 
-    var isEmpty: Bool { tracks.isEmpty }
-    var count: Int { tracks.count }
+    public var isEmpty: Bool { tracks.isEmpty }
+    public var count: Int { tracks.count }
 
     private var effectiveIndex: Int {
         if shuffleEnabled, currentIndex >= 0, currentIndex < shuffledIndices.count {
@@ -59,7 +59,7 @@ class PlaybackQueue: ObservableObject {
         }
     }
 
-    func setTracks(_ newTracks: [Track], startAt: Int = 0) {
+    public func setTracks(_ newTracks: [Track], startAt: Int = 0) {
         tracks = newTracks
         currentIndex = startAt
         if shuffleEnabled {
@@ -67,7 +67,7 @@ class PlaybackQueue: ObservableObject {
         }
     }
 
-    func advance() {
+    public func advance() {
         let next = nextIndex
         if next >= 0 {
             currentIndex = shuffleEnabled
@@ -78,19 +78,19 @@ class PlaybackQueue: ObservableObject {
         }
     }
 
-    func goBack() {
+    public func goBack() {
         guard currentIndex > 0 else { return }
         currentIndex -= 1
     }
 
-    func append(_ track: Track) {
+    public func append(_ track: Track) {
         tracks.append(track)
         if shuffleEnabled {
             shuffledIndices.append(tracks.count - 1)
         }
     }
 
-    func remove(at index: Int) {
+    public func remove(at index: Int) {
         guard index >= 0, index < tracks.count else { return }
         tracks.remove(at: index)
         if shuffleEnabled {
@@ -104,7 +104,7 @@ class PlaybackQueue: ObservableObject {
         }
     }
 
-    func move(from source: Int, to destination: Int) {
+    public func move(from source: Int, to destination: Int) {
         guard source != destination,
               source >= 0, source < tracks.count,
               destination >= 0, destination < tracks.count else { return }
@@ -121,20 +121,20 @@ class PlaybackQueue: ObservableObject {
         }
     }
 
-    func clear() {
+    public func clear() {
         tracks.removeAll()
         shuffledIndices.removeAll()
         currentIndex = -1
     }
 
-    func toggleShuffle() {
+    public func toggleShuffle() {
         shuffleEnabled.toggle()
         if shuffleEnabled {
             reshuffle()
         }
     }
 
-    func cycleRepeat() {
+    public func cycleRepeat() {
         switch repeatMode {
         case .off: repeatMode = .all
         case .all: repeatMode = .one

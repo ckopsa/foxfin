@@ -1,4 +1,7 @@
 import SwiftUI
+import AppKit
+import JellyfinAPI
+import AudioEngine
 
 // MARK: - Main Content
 
@@ -9,6 +12,7 @@ struct ContentView: View {
 
     enum Tab: String, CaseIterable {
         case library = "Library"
+        case songs = "Songs"
         case queue = "Queue"
         case search = "Search"
         case settings = "Settings"
@@ -16,6 +20,7 @@ struct ContentView: View {
         var icon: String {
             switch self {
             case .library: return "music.note.house"
+            case .songs: return "music.note.list"
             case .queue: return "list.bullet"
             case .search: return "magnifyingglass"
             case .settings: return "gearshape"
@@ -40,6 +45,7 @@ struct ContentView: View {
 
                 switch selectedTab {
                 case .library: LibraryBrowserView()
+                case .songs: SongsView()
                 case .queue: QueueView()
                 case .search: SearchView()
                 case .settings: SettingsView()
@@ -50,6 +56,26 @@ struct ContentView: View {
         }
         .frame(width: 320, height: 480)
     }
+}
+
+private func baseItemToTrack(_ item: BaseItem, jellyfinClient: JellyfinClient) -> Track? {
+    guard let source = item.MediaSources?.first,
+          let url = jellyfinClient.streamURL(for: item.Id, mediaSourceId: source.Id) else { return nil }
+    return Track(
+        id: item.Id,
+        name: item.Name,
+        artist: item.AlbumArtist ?? "Unknown Artist",
+        album: item.Album ?? "",
+        streamURL: url,
+        durationSeconds: item.durationSeconds ?? 0,
+        mediaSourceId: source.Id
+    )
+}
+
+private func formatDuration(_ seconds: TimeInterval) -> String {
+    let mins = Int(seconds) / 60
+    let secs = Int(seconds) % 60
+    return String(format: "%d:%02d", mins, secs)
 }
 
 // MARK: - Now Playing
@@ -100,7 +126,12 @@ struct NowPlayingView: View {
                 }
             }
 
-            HStack(spacing: 20) {
+            HStack(spacing: 12) {
+                Button(action: { audioEngine.queue.toggleShuffle() }) {
+                    Image(systemName: audioEngine.queue.shuffleEnabled ? "shuffle.circle.fill" : "shuffle")
+                        .foregroundColor(audioEngine.queue.shuffleEnabled ? .accentColor : .primary)
+                        .font(.caption)
+                }
                 Button(action: audioEngine.previousTrack) {
                     Image(systemName: "backward.fill")
                 }
@@ -110,6 +141,11 @@ struct NowPlayingView: View {
                 }
                 Button(action: audioEngine.nextTrack) {
                     Image(systemName: "forward.fill")
+                }
+                Button(action: { audioEngine.queue.cycleRepeat() }) {
+                    Image(systemName: repeatIcon)
+                        .foregroundColor(audioEngine.queue.repeatMode != .off ? .accentColor : .primary)
+                        .font(.caption)
                 }
 
                 Spacer()
@@ -135,6 +171,14 @@ struct NowPlayingView: View {
         if audioEngine.volume == 0 { return "speaker.slash.fill" }
         if audioEngine.volume < 0.5 { return "speaker.wave.1.fill" }
         return "speaker.wave.2.fill"
+    }
+
+    private var repeatIcon: String {
+        switch audioEngine.queue.repeatMode {
+        case .off: return "repeat"
+        case .all: return "repeat.circle.fill"
+        case .one: return "repeat.1.circle.fill"
+        }
     }
 
     private func formatTime(_ seconds: TimeInterval) -> String {
@@ -301,29 +345,96 @@ struct LibraryBrowserView: View {
     }
 
     private func playAlbumFromTrack(_ item: BaseItem) {
-        let allTracks = tracks.compactMap { baseItemToTrack($0) }
+        let allTracks = tracks.compactMap { baseItemToTrack($0, jellyfinClient: jellyfinClient) }
         guard let index = allTracks.firstIndex(where: { $0.id == item.Id }) else { return }
         audioEngine.playQueue(tracks: allTracks, startAt: index)
     }
+}
 
-    private func baseItemToTrack(_ item: BaseItem) -> Track? {
-        guard let source = item.MediaSources?.first,
-              let url = jellyfinClient.streamURL(for: item.Id, mediaSourceId: source.Id) else { return nil }
-        return Track(
-            id: item.Id,
-            name: item.Name,
-            artist: item.AlbumArtist ?? "",
-            album: item.Album ?? "",
-            streamURL: url,
-            durationSeconds: item.durationSeconds ?? 0,
-            mediaSourceId: source.Id
-        )
+// MARK: - Songs
+
+struct SongsView: View {
+    @EnvironmentObject var jellyfinClient: JellyfinClient
+    @EnvironmentObject var audioEngine: AudioEngine
+    @State private var songs: [BaseItem] = []
+    @State private var filteredSongs: [BaseItem] = []
+    @State private var query = ""
+    @State private var isLoading = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            TextField("Filter songs...", text: $query)
+                .textFieldStyle(.roundedBorder)
+                .padding(8)
+                .onChange(of: query) { newValue in
+                    applyFilter(newValue)
+                }
+
+            if isLoading {
+                ProgressView()
+                    .frame(maxHeight: .infinity)
+            } else if filteredSongs.isEmpty {
+                VStack {
+                    Spacer()
+                    Text(query.isEmpty ? "No songs found" : "No matching songs")
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+            } else {
+                List(filteredSongs) { song in
+                    Button {
+                        playSong(song)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(song.Name)
+                                .lineLimit(1)
+                            Spacer()
+                            Text(song.AlbumArtist ?? "Unknown Artist")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                            if let dur = song.durationSeconds {
+                                Text(formatDuration(dur))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .task { await loadSongs() }
     }
 
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        let mins = Int(seconds) / 60
-        let secs = Int(seconds) % 60
-        return String(format: "%d:%02d", mins, secs)
+    private func loadSongs() async {
+        isLoading = true
+        if case .success(let items) = await jellyfinClient.fetchSongs() {
+            songs = items
+            applyFilter(query)
+        }
+        isLoading = false
+    }
+
+    private func applyFilter(_ searchText: String) {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            filteredSongs = songs
+            return
+        }
+
+        let needle = trimmed.localizedLowercase
+        filteredSongs = songs.filter { song in
+            song.Name.localizedLowercase.contains(needle) ||
+            (song.AlbumArtist?.localizedLowercase.contains(needle) ?? false) ||
+            (song.Album?.localizedLowercase.contains(needle) ?? false)
+        }
+    }
+
+    private func playSong(_ song: BaseItem) {
+        let queue = filteredSongs.compactMap { baseItemToTrack($0, jellyfinClient: jellyfinClient) }
+        guard let index = queue.firstIndex(where: { $0.id == song.Id }) else { return }
+        audioEngine.playQueue(tracks: queue, startAt: index)
     }
 }
 
@@ -456,7 +567,7 @@ struct SearchView: View {
                                     .lineLimit(1)
                             }
                             Spacer()
-                            Text(item.Type)
+                            Text(item.itemType)
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .padding(.horizontal, 4)
@@ -481,26 +592,18 @@ struct SearchView: View {
     }
 
     private func playItem(_ item: BaseItem) {
-        guard item.Type == "Audio",
-              let source = item.MediaSources?.first,
-              let url = jellyfinClient.streamURL(for: item.Id, mediaSourceId: source.Id) else { return }
-        let track = Track(
-            id: item.Id,
-            name: item.Name,
-            artist: item.AlbumArtist ?? "",
-            album: item.Album ?? "",
-            streamURL: url,
-            durationSeconds: item.durationSeconds ?? 0,
-            mediaSourceId: source.Id
-        )
+        guard item.itemType == "Audio",
+              let track = baseItemToTrack(item, jellyfinClient: jellyfinClient) else { return }
         audioEngine.playQueue(tracks: [track])
     }
 
     private func subtitle(for item: BaseItem) -> String {
-        switch item.Type {
-        case "Audio": return [item.AlbumArtist, item.Album].compactMap { $0 }.joined(separator: " — ")
+        switch item.itemType {
+        case "Audio":
+            let values = [item.AlbumArtist ?? "Unknown Artist", item.Album].compactMap { $0 }
+            return values.joined(separator: " — ")
         case "MusicAlbum": return item.AlbumArtist ?? ""
-        default: return item.Type
+        default: return item.itemType
         }
     }
 }

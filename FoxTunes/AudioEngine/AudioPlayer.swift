@@ -2,7 +2,7 @@ import AVFoundation
 import Combine
 
 /// Playback state published to UI via @Published properties.
-enum PlaybackState: Equatable {
+public enum PlaybackState: Equatable {
     case idle
     case loading
     case playing
@@ -11,114 +11,164 @@ enum PlaybackState: Equatable {
 }
 
 /// A track ready for playback.
-struct Track: Equatable {
-    let id: String
-    let name: String
-    let artist: String
-    let album: String
-    let streamURL: URL
-    let durationSeconds: TimeInterval
-    let mediaSourceId: String
+public struct Track: Equatable {
+    public let id: String
+    public let name: String
+    public let artist: String
+    public let album: String
+    public let streamURL: URL
+    public let durationSeconds: TimeInterval
+    public let mediaSourceId: String
 
-    static func == (lhs: Track, rhs: Track) -> Bool { lhs.id == rhs.id }
-}
-
-/// Core audio playback engine with gapless support via dual-player crossover.
-///
-/// Uses two AVAudioPlayer instances: one for the current track and one prefetched
-/// for the next. When the current track nears completion, the next player is already
-/// prepared and starts immediately for gapless transition.
-class AudioEngine: ObservableObject {
-    @Published var state: PlaybackState = .idle
-    @Published var currentTrack: Track?
-    @Published var elapsed: TimeInterval = 0
-    @Published var duration: TimeInterval = 0
-    @Published var volume: Float = 1.0 {
-        didSet { currentPlayer?.volume = volume }
+    public init(
+        id: String,
+        name: String,
+        artist: String,
+        album: String,
+        streamURL: URL,
+        durationSeconds: TimeInterval,
+        mediaSourceId: String
+    ) {
+        self.id = id
+        self.name = name
+        self.artist = artist
+        self.album = album
+        self.streamURL = streamURL
+        self.durationSeconds = durationSeconds
+        self.mediaSourceId = mediaSourceId
     }
 
-    var isPlaying: Bool { state == .playing }
+    public static func == (lhs: Track, rhs: Track) -> Bool { lhs.id == rhs.id }
+}
 
-    var currentTrackName: String { currentTrack?.name ?? "Not Playing" }
-    var currentArtistName: String { currentTrack?.artist ?? "" }
+/// Core audio playback engine with streaming and gapless prefetch.
+///
+/// Uses AVPlayer for HTTP streaming — playback starts immediately without
+/// downloading the full file. The next track's AVPlayerItem is created early
+/// so it pre-buffers for gapless transition.
+public class AudioEngine: ObservableObject {
+    @Published public var state: PlaybackState = .idle
+    @Published public var currentTrack: Track?
+    @Published public var elapsed: TimeInterval = 0
+    @Published public var duration: TimeInterval = 0
+    @Published public var volume: Float = 1.0 {
+        didSet { player.volume = volume }
+    }
 
-    private var currentPlayer: AVAudioPlayer?
-    private var nextPlayer: AVAudioPlayer?
+    public var isPlaying: Bool { state == .playing }
+
+    public var currentTrackName: String { currentTrack?.name ?? "Not Playing" }
+    public var currentArtistName: String { currentTrack?.artist ?? "" }
+
+    private let player = AVPlayer()
+    private var nextItem: AVPlayerItem?
     private var nextPrefetchedTrack: Track?
-    private var progressTimer: Timer?
-    private var prefetchTask: Task<Void, Never>?
-    private var playbackDelegate: PlaybackDelegate?
+    private var timeObserver: Any?
+    private var statusObserver: AnyCancellable?
+    private var itemEndObserver: AnyCancellable?
 
-    let queue = PlaybackQueue()
-    private let downloadSession: URLSession
+    public let queue = PlaybackQueue()
 
-    init() {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForResource = 300
-        config.waitsForConnectivity = true
-        self.downloadSession = URLSession(configuration: config)
+    public init() {
+        player.volume = volume
+        setupTimeObserver()
+        setupStatusObserver()
     }
 
     deinit {
-        progressTimer?.invalidate()
-        prefetchTask?.cancel()
+        if let timeObserver {
+            player.removeTimeObserver(timeObserver)
+        }
+    }
+
+    // MARK: - Observers
+
+    private func setupStatusObserver() {
+        statusObserver = player.publisher(for: \.timeControlStatus)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                guard let self, self.currentTrack != nil else { return }
+                switch status {
+                case .playing:
+                    self.state = .playing
+                case .paused:
+                    // Don't overwrite idle/loading — paused fires during item swap
+                    if self.state == .playing || self.state == .buffering {
+                        self.state = .paused
+                    }
+                case .waitingToPlayAtSpecifiedRate:
+                    self.state = .buffering
+                @unknown default:
+                    break
+                }
+            }
+    }
+
+    private func setupTimeObserver() {
+        timeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
+            queue: .main
+        ) { [weak self] time in
+            guard let self, self.currentTrack != nil else { return }
+            let secs = time.seconds
+            guard secs.isFinite else { return }
+            self.elapsed = secs
+
+            // Prefetch next track at 80% progress
+            if self.duration > 0, secs / self.duration > 0.8 {
+                self.prefetchNextIfNeeded()
+            }
+        }
+    }
+
+    private func observeItemEnd(_ item: AVPlayerItem) {
+        itemEndObserver?.cancel()
+        itemEndObserver = NotificationCenter.default
+            .publisher(for: .AVPlayerItemDidPlayToEndTime, object: item)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.nextTrack()
+            }
     }
 
     // MARK: - Playback Controls
 
-    func play(track: Track) {
-        prefetchTask?.cancel()
+    public func play(track: Track) {
         state = .loading
         currentTrack = track
         duration = track.durationSeconds
         elapsed = 0
 
-        // Check if this track was already prefetched
-        if let nextPlayer, let nextPrefetchedTrack, nextPrefetchedTrack == track {
-            startPlayback(with: nextPlayer)
-            self.nextPlayer = nil
+        // Use prefetched item if it matches
+        if let nextItem, let nextPrefetchedTrack, nextPrefetchedTrack == track {
+            startPlayback(with: nextItem)
+            self.nextItem = nil
             self.nextPrefetchedTrack = nil
             return
         }
 
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let tempURL = try await self.downloadTrack(track)
-                let player = try AVAudioPlayer(contentsOf: tempURL)
-                player.volume = self.volume
-                player.prepareToPlay()
-                await MainActor.run {
-                    self.startPlayback(with: player)
-                }
-            } catch {
-                await MainActor.run {
-                    self.state = .idle
-                }
-            }
-        }
+        let item = AVPlayerItem(url: track.streamURL)
+        startPlayback(with: item)
     }
 
-    func togglePlayPause() {
+    public func togglePlayPause() {
         switch state {
-        case .playing:
-            currentPlayer?.pause()
+        case .playing, .buffering:
+            player.pause()
             state = .paused
         case .paused:
-            currentPlayer?.play()
-            state = .playing
+            player.play()
         default:
             break
         }
     }
 
-    func stop() {
-        progressTimer?.invalidate()
-        progressTimer = nil
-        prefetchTask?.cancel()
-        currentPlayer?.stop()
-        currentPlayer = nil
-        nextPlayer = nil
+    public func stop() {
+        itemEndObserver?.cancel()
+        itemEndObserver = nil
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        nextItem = nil
         nextPrefetchedTrack = nil
         currentTrack = nil
         state = .idle
@@ -126,12 +176,13 @@ class AudioEngine: ObservableObject {
         duration = 0
     }
 
-    func seek(to time: TimeInterval) {
-        currentPlayer?.currentTime = time
+    public func seek(to time: TimeInterval) {
+        let cmTime = CMTime(seconds: time, preferredTimescale: 600)
+        player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
         elapsed = time
     }
 
-    func nextTrack() {
+    public func nextTrack() {
         queue.advance()
         if let track = queue.currentTrack {
             play(track: track)
@@ -140,7 +191,7 @@ class AudioEngine: ObservableObject {
         }
     }
 
-    func previousTrack() {
+    public func previousTrack() {
         if elapsed > 3 {
             seek(to: 0)
             return
@@ -151,7 +202,7 @@ class AudioEngine: ObservableObject {
         }
     }
 
-    func playQueue(tracks: [Track], startAt index: Int = 0) {
+    public func playQueue(tracks: [Track], startAt index: Int = 0) {
         queue.setTracks(tracks, startAt: index)
         if let track = queue.currentTrack {
             play(track: track)
@@ -160,107 +211,35 @@ class AudioEngine: ObservableObject {
 
     // MARK: - Queue Manipulation
 
-    func addToQueue(_ track: Track) {
+    public func addToQueue(_ track: Track) {
         queue.append(track)
     }
 
-    func removeFromQueue(at index: Int) {
+    public func removeFromQueue(at index: Int) {
         queue.remove(at: index)
     }
 
-    func moveInQueue(from: Int, to: Int) {
+    public func moveInQueue(from: Int, to: Int) {
         queue.move(from: from, to: to)
     }
 
-    func clearQueue() {
+    public func clearQueue() {
         stop()
         queue.clear()
     }
 
     // MARK: - Internal
 
-    private func startPlayback(with player: AVAudioPlayer) {
-        currentPlayer?.stop()
-        currentPlayer = player
-
-        let delegate = PlaybackDelegate { [weak self] in
-            self?.onTrackFinished()
-        }
-        player.delegate = delegate
-        self.playbackDelegate = delegate
-
+    private func startPlayback(with item: AVPlayerItem) {
+        observeItemEnd(item)
+        player.replaceCurrentItem(with: item)
         player.play()
-        state = .playing
-        startProgressTimer()
-    }
-
-    private func onTrackFinished() {
-        nextTrack()
-    }
-
-    private func startProgressTimer() {
-        progressTimer?.invalidate()
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self, let player = self.currentPlayer else { return }
-            self.elapsed = player.currentTime
-
-            // Trigger prefetch at 80% progress
-            let progress = self.duration > 0 ? self.elapsed / self.duration : 0
-            if progress > 0.8 {
-                self.prefetchNextIfNeeded()
-            }
-        }
     }
 
     private func prefetchNextIfNeeded() {
-        guard prefetchTask == nil, let next = queue.peekNext, nextPrefetchedTrack != next else { return }
-
-        prefetchTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                let tempURL = try await self.downloadTrack(next)
-                let player = try AVAudioPlayer(contentsOf: tempURL)
-                player.volume = self.volume
-                player.prepareToPlay()
-                await MainActor.run {
-                    self.nextPlayer = player
-                    self.nextPrefetchedTrack = next
-                    self.prefetchTask = nil
-                }
-            } catch {
-                await MainActor.run {
-                    self.prefetchTask = nil
-                }
-            }
-        }
-    }
-
-    private func downloadTrack(_ track: Track) async throws -> URL {
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("foxtunes-\(track.id).audio")
-
-        // Use cached file if already downloaded
-        if FileManager.default.fileExists(atPath: tempURL.path) {
-            return tempURL
-        }
-
-        let (data, _) = try await downloadSession.data(from: track.streamURL)
-        try data.write(to: tempURL)
-        return tempURL
-    }
-}
-
-/// AVAudioPlayerDelegate that calls a closure on finish for gapless chaining.
-private class PlaybackDelegate: NSObject, AVAudioPlayerDelegate {
-    private let onFinish: () -> Void
-
-    init(onFinish: @escaping () -> Void) {
-        self.onFinish = onFinish
-    }
-
-    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        if flag {
-            onFinish()
-        }
+        guard nextItem == nil, let next = queue.peekNext, nextPrefetchedTrack != next else { return }
+        // Creating the AVPlayerItem starts buffering from the URL
+        nextItem = AVPlayerItem(url: next.streamURL)
+        nextPrefetchedTrack = next
     }
 }

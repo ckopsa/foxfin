@@ -1,7 +1,7 @@
 import Foundation
 
 /// Typed errors for Jellyfin API operations.
-enum JellyfinError: Error, Equatable {
+public enum JellyfinError: Error, Equatable {
     case notAuthenticated
     case invalidServerURL
     case authenticationFailed(statusCode: Int)
@@ -9,7 +9,7 @@ enum JellyfinError: Error, Equatable {
     case networkError(String)
     case decodingError(String)
 
-    static func == (lhs: JellyfinError, rhs: JellyfinError) -> Bool {
+    public static func == (lhs: JellyfinError, rhs: JellyfinError) -> Bool {
         switch (lhs, rhs) {
         case (.notAuthenticated, .notAuthenticated): return true
         case (.invalidServerURL, .invalidServerURL): return true
@@ -24,18 +24,18 @@ enum JellyfinError: Error, Equatable {
 
 /// Jellyfin REST API client. Handles authentication, library browsing,
 /// search, favorites, playlists, and stream URL construction.
-class JellyfinClient: ObservableObject {
-    @Published var isAuthenticated = false
-    @Published var userId: String?
-    @Published var serverName: String?
+public class JellyfinClient: ObservableObject {
+    @Published public var isAuthenticated = false
+    @Published public var userId: String?
+    @Published public var serverName: String?
 
-    private(set) var serverURL: String?
+    public private(set) var serverURL: String?
     private var accessToken: String?
     private var username: String?
     private var password: String?
     private let deviceId: String
 
-    init() {
+    public init() {
         self.deviceId = "foxtunes-" + (UserDefaults.standard.string(forKey: "FoxTunesDeviceId") ?? {
             let id = UUID().uuidString
             UserDefaults.standard.set(id, forKey: "FoxTunesDeviceId")
@@ -45,7 +45,7 @@ class JellyfinClient: ObservableObject {
 
     // MARK: - Authentication
 
-    func authenticate(serverURL: String, username: String, password: String) async -> Result<Void, JellyfinError> {
+    public func authenticate(serverURL: String, username: String, password: String) async -> Result<Void, JellyfinError> {
         let trimmed = serverURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard URL(string: trimmed) != nil else {
             return .failure(.invalidServerURL)
@@ -93,7 +93,7 @@ class JellyfinClient: ObservableObject {
         }
     }
 
-    func restoreSession(serverURL: String) async -> Bool {
+    public func restoreSession(serverURL: String) async -> Bool {
         let trimmed = serverURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let token = KeychainHelper.loadToken(for: trimmed) else { return false }
         self.serverURL = trimmed
@@ -114,7 +114,7 @@ class JellyfinClient: ObservableObject {
         }
     }
 
-    func logout() {
+    public func logout() {
         if let serverURL {
             KeychainHelper.deleteToken(for: serverURL)
         }
@@ -126,7 +126,7 @@ class JellyfinClient: ObservableObject {
 
     // MARK: - Library Browsing
 
-    func fetchArtists() async -> Result<[BaseItem], JellyfinError> {
+    public func fetchArtists() async -> Result<[BaseItem], JellyfinError> {
         guard let userId else { return .failure(.notAuthenticated) }
         return await getItems(path: "/Artists", query: [
             "userId": userId,
@@ -135,7 +135,7 @@ class JellyfinClient: ObservableObject {
         ])
     }
 
-    func fetchAlbums(byArtistId artistId: String) async -> Result<[BaseItem], JellyfinError> {
+    public func fetchAlbums(byArtistId artistId: String) async -> Result<[BaseItem], JellyfinError> {
         guard let userId else { return .failure(.notAuthenticated) }
         return await getItems(path: "/Items", query: [
             "userId": userId,
@@ -146,45 +146,60 @@ class JellyfinClient: ObservableObject {
         ])
     }
 
-    func fetchTracks(inAlbumId albumId: String) async -> Result<[BaseItem], JellyfinError> {
+    public func fetchTracks(inAlbumId albumId: String) async -> Result<[BaseItem], JellyfinError> {
         guard let userId else { return .failure(.notAuthenticated) }
         return await getItems(path: "/Items", query: [
             "userId": userId,
             "parentId": albumId,
             "IncludeItemTypes": "Audio",
+            "Fields": "MediaSources",
             "sortBy": "IndexNumber",
+            "sortOrder": "Ascending",
+        ])
+    }
+
+    public func fetchSongs() async -> Result<[BaseItem], JellyfinError> {
+        guard let userId else { return .failure(.notAuthenticated) }
+        return await getItems(path: "/Items", query: [
+            "userId": userId,
+            "IncludeItemTypes": "Audio",
+            "Recursive": "true",
+            "Fields": "MediaSources",
+            "sortBy": "SortName",
             "sortOrder": "Ascending",
         ])
     }
 
     // MARK: - Search
 
-    func search(query searchTerm: String) async -> Result<[BaseItem], JellyfinError> {
+    public func search(query searchTerm: String) async -> Result<[BaseItem], JellyfinError> {
         guard let userId else { return .failure(.notAuthenticated) }
         return await getItems(path: "/Items", query: [
             "userId": userId,
             "searchTerm": searchTerm,
             "IncludeItemTypes": "Audio,MusicAlbum,MusicArtist",
             "Recursive": "true",
+            "Fields": "MediaSources",
             "Limit": "50",
         ])
     }
 
     // MARK: - Favorites
 
-    func fetchFavorites() async -> Result<[BaseItem], JellyfinError> {
+    public func fetchFavorites() async -> Result<[BaseItem], JellyfinError> {
         guard let userId else { return .failure(.notAuthenticated) }
         return await getItems(path: "/Items", query: [
             "userId": userId,
             "IsFavorite": "true",
             "IncludeItemTypes": "Audio,MusicAlbum,MusicArtist",
             "Recursive": "true",
+            "Fields": "MediaSources",
             "sortBy": "SortName",
             "sortOrder": "Ascending",
         ])
     }
 
-    func toggleFavorite(itemId: String, favorite: Bool) async -> Result<Void, JellyfinError> {
+    public func toggleFavorite(itemId: String, favorite: Bool) async -> Result<Void, JellyfinError> {
         guard let userId else { return .failure(.notAuthenticated) }
         let path = "/Users/\(userId)/FavoriteItems/\(itemId)"
         let method = favorite ? "POST" : "DELETE"
@@ -193,7 +208,7 @@ class JellyfinClient: ObservableObject {
 
     // MARK: - Playlists
 
-    func fetchPlaylists() async -> Result<[BaseItem], JellyfinError> {
+    public func fetchPlaylists() async -> Result<[BaseItem], JellyfinError> {
         guard let userId else { return .failure(.notAuthenticated) }
         return await getItems(path: "/Items", query: [
             "userId": userId,
@@ -204,7 +219,7 @@ class JellyfinClient: ObservableObject {
         ])
     }
 
-    func fetchPlaylistItems(playlistId: String) async -> Result<[BaseItem], JellyfinError> {
+    public func fetchPlaylistItems(playlistId: String) async -> Result<[BaseItem], JellyfinError> {
         guard let userId else { return .failure(.notAuthenticated) }
         return await getItems(path: "/Playlists/\(playlistId)/Items", query: [
             "userId": userId,
@@ -213,7 +228,7 @@ class JellyfinClient: ObservableObject {
 
     // MARK: - URLs
 
-    func streamURL(for itemId: String, mediaSourceId: String) -> URL? {
+    public func streamURL(for itemId: String, mediaSourceId: String) -> URL? {
         guard let serverURL, let accessToken else { return nil }
         var components = URLComponents(string: "\(serverURL)/Audio/\(itemId)/stream")
         components?.queryItems = [
@@ -224,7 +239,7 @@ class JellyfinClient: ObservableObject {
         return components?.url
     }
 
-    func imageURL(for itemId: String, maxWidth: Int = 300) -> URL? {
+    public func imageURL(for itemId: String, maxWidth: Int = 300) -> URL? {
         guard let serverURL else { return nil }
         var components = URLComponents(string: "\(serverURL)/Items/\(itemId)/Images/Primary")
         components?.queryItems = [
@@ -289,7 +304,7 @@ class JellyfinClient: ObservableObject {
 
             if http.statusCode == 401 {
                 // Attempt re-auth if credentials are available
-                if let username, let password, let serverURL {
+                if let username, let password {
                     let reauth = await authenticate(serverURL: serverURL, username: username, password: password)
                     switch reauth {
                     case .success:

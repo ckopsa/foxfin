@@ -2,6 +2,7 @@ import Foundation
 import MediaPlayer
 import Combine
 import AppKit
+import AudioEngine
 
 /// Bridges AudioEngine state to macOS Now Playing info center and media key commands.
 class NowPlayingManager {

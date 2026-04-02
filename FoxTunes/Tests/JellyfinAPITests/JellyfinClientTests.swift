@@ -46,7 +46,7 @@ final class JellyfinClientTests: XCTestCase {
         let item = response.Items[0]
         XCTAssertEqual(item.Id, "abc123")
         XCTAssertEqual(item.Name, "Test Track")
-        XCTAssertEqual(item.Type, "Audio")
+        XCTAssertEqual(item.itemType, "Audio")
         XCTAssertEqual(item.AlbumArtist, "Test Artist")
         XCTAssertEqual(item.Album, "Test Album")
         XCTAssertEqual(item.IndexNumber, 1)

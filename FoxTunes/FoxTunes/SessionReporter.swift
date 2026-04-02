@@ -1,5 +1,7 @@
 import Foundation
 import Combine
+import JellyfinAPI
+import AudioEngine
 
 /// Reports playback state to Jellyfin server for dashboard visibility
 /// and resume-from-position support.

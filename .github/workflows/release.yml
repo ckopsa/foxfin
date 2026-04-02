@@ -1,0 +1,88 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build release binary
+        run: cd FoxTunes && swift build -c release
+
+      - name: Bundle app
+        run: |
+          cd FoxTunes
+          APP=".build/release/FoxTunes.app"
+          rm -rf "$APP"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp .build/release/FoxTunes "$APP/Contents/MacOS/FoxTunes"
+          cp FoxTunes/Info.plist "$APP/Contents/Info.plist"
+          cp FoxTunes/FoxTunes.entitlements "$APP/Contents/Resources/"
+          codesign --force --sign - --entitlements FoxTunes/FoxTunes.entitlements "$APP"
+
+      - name: Zip app
+        run: cd FoxTunes/.build/release && zip -r FoxTunes.zip FoxTunes.app
+
+      - name: Generate version
+        id: version
+        run: |
+          VERSION="0.$(date -u +%Y%m%d).$(echo $GITHUB_SHA | head -c 7)"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            FoxTunes/.build/release/FoxTunes.zip \
+            --title "FoxTunes ${{ steps.version.outputs.tag }}" \
+            --notes "Built from ${{ github.sha }}" \
+            --latest
+
+      - name: Update Homebrew cask
+        if: vars.TAP_REPO != ''
+        env:
+          GH_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          SHA=$(shasum -a 256 FoxTunes/.build/release/FoxTunes.zip | awk '{print $1}')
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          TAP_REPO="${{ vars.TAP_REPO }}"
+
+          cat > /tmp/foxtunes.rb <<CASK
+          cask "foxtunes" do
+            version "$VERSION"
+            sha256 "$SHA"
+
+            url "https://github.com/ckopsa/foxfin/releases/download/$TAG/FoxTunes.zip"
+            name "FoxTunes"
+            desc "Jellyfin music player for macOS with menu bar and windowed modes"
+            homepage "https://github.com/ckopsa/foxfin"
+
+            app "FoxTunes.app"
+
+            zap trash: [
+              "~/Library/Application Support/FoxTunes",
+            ]
+          end
+          CASK
+
+          # Remove leading whitespace from heredoc
+          sed -i '' 's/^          //' /tmp/foxtunes.rb
+
+          cd /tmp
+          gh repo clone "$TAP_REPO" homebrew-tap-update
+          cd homebrew-tap-update
+          mkdir -p Casks
+          cp /tmp/foxtunes.rb Casks/foxtunes.rb
+          git add -A
+          git commit -m "Update FoxTunes to $TAG"
+          git push
