@@ -83,6 +83,8 @@ private func formatDuration(_ seconds: TimeInterval) -> String {
 struct NowPlayingView: View {
     @EnvironmentObject var audioEngine: AudioEngine
     @EnvironmentObject var jellyfinClient: JellyfinClient
+    @State private var isScrubbing = false
+    @State private var scrubValue: TimeInterval = 0
 
     var body: some View {
         VStack(spacing: 8) {
@@ -112,11 +114,21 @@ struct NowPlayingView: View {
 
             // Progress bar
             if audioEngine.duration > 0 {
-                ProgressView(value: audioEngine.elapsed, total: audioEngine.duration)
-                    .progressViewStyle(.linear)
+                Slider(
+                    value: Binding(
+                        get: { isScrubbing ? scrubValue : audioEngine.elapsed },
+                        set: { scrubValue = $0; isScrubbing = true }
+                    ),
+                    in: 0...audioEngine.duration
+                ) { editing in
+                    if !editing {
+                        audioEngine.seek(to: scrubValue)
+                        isScrubbing = false
+                    }
+                }
 
                 HStack {
-                    Text(formatTime(audioEngine.elapsed))
+                    Text(formatTime(isScrubbing ? scrubValue : audioEngine.elapsed))
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Spacer()

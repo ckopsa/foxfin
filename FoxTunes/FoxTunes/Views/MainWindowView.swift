@@ -61,6 +61,8 @@ struct MainWindowView: View {
 struct TransportBar: View {
     @EnvironmentObject var audioEngine: AudioEngine
     @EnvironmentObject var jellyfinClient: JellyfinClient
+    @State private var isScrubbing = false
+    @State private var scrubValue: TimeInterval = 0
 
     var body: some View {
         HStack(spacing: 16) {
@@ -112,14 +114,24 @@ struct TransportBar: View {
             Spacer()
 
             if audioEngine.duration > 0 {
-                Text(formatTime(audioEngine.elapsed))
+                Text(formatTime(isScrubbing ? scrubValue : audioEngine.elapsed))
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .monospacedDigit()
 
-                ProgressView(value: audioEngine.elapsed, total: audioEngine.duration)
-                    .progressViewStyle(.linear)
-                    .frame(width: 200)
+                Slider(
+                    value: Binding(
+                        get: { isScrubbing ? scrubValue : audioEngine.elapsed },
+                        set: { scrubValue = $0; isScrubbing = true }
+                    ),
+                    in: 0...audioEngine.duration
+                ) { editing in
+                    if !editing {
+                        audioEngine.seek(to: scrubValue)
+                        isScrubbing = false
+                    }
+                }
+                .frame(width: 200)
 
                 Text(formatTime(audioEngine.duration))
                     .font(.caption)
