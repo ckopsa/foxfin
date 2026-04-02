@@ -13,22 +13,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build release binary
-        run: cd FoxTunes && swift build -c release
+      - name: Build universal binary
+        run: cd FoxTunes && swift build -c release --arch arm64 --arch x86_64
 
       - name: Bundle app
         run: |
           cd FoxTunes
-          APP=".build/release/FoxTunes.app"
+          APP=".build/apple/Products/Release/FoxTunes.app"
           rm -rf "$APP"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          cp .build/release/FoxTunes "$APP/Contents/MacOS/FoxTunes"
+          cp .build/apple/Products/Release/FoxTunes "$APP/Contents/MacOS/FoxTunes"
           cp FoxTunes/Info.plist "$APP/Contents/Info.plist"
           cp FoxTunes/FoxTunes.entitlements "$APP/Contents/Resources/"
           codesign --force --sign - --entitlements FoxTunes/FoxTunes.entitlements "$APP"
 
       - name: Zip app
-        run: cd FoxTunes/.build/release && zip -r FoxTunes.zip FoxTunes.app
+        run: cd FoxTunes/.build/apple/Products/Release && zip -r FoxTunes.zip FoxTunes.app
 
       - name: Generate version
         id: version
@@ -42,7 +42,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
-            FoxTunes/.build/release/FoxTunes.zip \
+            FoxTunes/.build/apple/Products/Release/FoxTunes.zip \
             --title "FoxTunes ${{ steps.version.outputs.tag }}" \
             --notes "Built from ${{ github.sha }}" \
             --latest
@@ -52,7 +52,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
-          SHA=$(shasum -a 256 FoxTunes/.build/release/FoxTunes.zip | awk '{print $1}')
+          SHA=$(shasum -a 256 FoxTunes/.build/apple/Products/Release/FoxTunes.zip | awk '{print $1}')
           VERSION="${{ steps.version.outputs.version }}"
           TAG="${{ steps.version.outputs.tag }}"
           TAP_REPO="${{ vars.TAP_REPO }}"
