@@ -79,8 +79,10 @@ jobs:
           sed -i '' 's/^          //' /tmp/foxtunes.rb
 
           cd /tmp
-          gh repo clone "$TAP_REPO" homebrew-tap-update
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" homebrew-tap-update
           cd homebrew-tap-update
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           mkdir -p Casks
           cp /tmp/foxtunes.rb Casks/foxtunes.rb
           git add -A
