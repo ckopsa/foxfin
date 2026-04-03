@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import Foundation
 
 /// Playback state published to UI via @Published properties.
 public enum PlaybackState: Equatable {
@@ -56,6 +57,7 @@ public class AudioEngine: ObservableObject {
     }
 
     public var isPlaying: Bool { state == .playing }
+    public let seeked = PassthroughSubject<TimeInterval, Never>()
 
     public var currentTrackName: String { currentTrack?.name ?? "Not Playing" }
     public var currentArtistName: String { currentTrack?.artist ?? "" }
@@ -106,7 +108,7 @@ public class AudioEngine: ObservableObject {
 
     private func setupTimeObserver() {
         timeObserver = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
+            forInterval: CMTime(seconds: 1.0, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
             guard let self, self.currentTrack != nil else { return }
@@ -180,6 +182,7 @@ public class AudioEngine: ObservableObject {
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
         player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
         elapsed = time
+        seeked.send(time)
     }
 
     public func nextTrack() {

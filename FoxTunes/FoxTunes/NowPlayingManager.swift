@@ -8,16 +8,11 @@ import AudioEngine
 class NowPlayingManager {
     private let audioEngine: AudioEngine
     private var cancellables = Set<AnyCancellable>()
-    private var updateTimer: Timer?
 
     init(audioEngine: AudioEngine) {
         self.audioEngine = audioEngine
         setupRemoteCommands()
         observePlaybackState()
-    }
-
-    deinit {
-        updateTimer?.invalidate()
     }
 
     // MARK: - Remote Commands
@@ -69,10 +64,8 @@ class NowPlayingManager {
             .sink { [weak self] track in
                 if track != nil {
                     self?.updateNowPlayingInfo()
-                    self?.startUpdateTimer()
                 } else {
                     self?.clearNowPlaying()
-                    self?.stopUpdateTimer()
                 }
             }
             .store(in: &cancellables)
@@ -82,6 +75,14 @@ class NowPlayingManager {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 self?.updatePlaybackState(state)
+            }
+            .store(in: &cancellables)
+
+        // Update elapsed time after seeks
+        audioEngine.seeked
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateNowPlayingInfo()
             }
             .store(in: &cancellables)
     }
@@ -121,17 +122,4 @@ class NowPlayingManager {
         MPNowPlayingInfoCenter.default().playbackState = .stopped
     }
 
-    // MARK: - Periodic Update
-
-    private func startUpdateTimer() {
-        stopUpdateTimer()
-        updateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.updateNowPlayingInfo()
-        }
-    }
-
-    private func stopUpdateTimer() {
-        updateTimer?.invalidate()
-        updateTimer = nil
-    }
 }
