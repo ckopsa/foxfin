@@ -1,5 +1,5 @@
 import Foundation
-import Combine
+import Observation
 import JellyfinAPI
 
 /// Sync state for individual offline tracks.
@@ -44,9 +44,10 @@ struct OfflineTrack: Identifiable {
 }
 
 /// Manages offline content: pinning albums, downloading tracks, serving cached audio.
-class OfflineManager: ObservableObject {
-    @Published var pinnedAlbums: [PinnedAlbum] = []
-    @Published var isOnline = true
+@Observable
+class OfflineManager {
+    var pinnedAlbums: [PinnedAlbum] = []
+    var isOnline = true
 
     private let jellyfinClient: JellyfinClient
     private let offlineDir: URL
@@ -54,7 +55,6 @@ class OfflineManager: ObservableObject {
     private let maxConcurrentDownloads = 2
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     private var syncQueue: [(trackId: String, action: String)] = []
-    private var cancellables = Set<AnyCancellable>()
 
     // In-memory store (SQLite would be used in production; this is the functional scaffold)
     private var albumStore: [String: PinnedAlbum] = [:]

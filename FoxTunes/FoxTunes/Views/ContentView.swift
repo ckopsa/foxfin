@@ -6,8 +6,8 @@ import AudioEngine
 // MARK: - Main Content
 
 struct ContentView: View {
-    @EnvironmentObject var jellyfinClient: JellyfinClient
-    @EnvironmentObject var audioEngine: AudioEngine
+    @Environment(JellyfinClient.self) var jellyfinClient
+    @Environment(AudioEngine.self) var audioEngine
     @State private var selectedTab: Tab = .library
 
     enum Tab: String, CaseIterable {
@@ -81,12 +81,13 @@ private func formatDuration(_ seconds: TimeInterval) -> String {
 // MARK: - Now Playing
 
 struct NowPlayingView: View {
-    @EnvironmentObject var audioEngine: AudioEngine
-    @EnvironmentObject var jellyfinClient: JellyfinClient
+    @Environment(AudioEngine.self) var audioEngine
+    @Environment(JellyfinClient.self) var jellyfinClient
     @State private var isScrubbing = false
     @State private var scrubValue: TimeInterval = 0
 
     var body: some View {
+        @Bindable var audioEngine = audioEngine
         VStack(spacing: 8) {
             HStack(spacing: 12) {
                 AsyncImage(url: artURL) { image in
@@ -219,8 +220,8 @@ struct NowPlayingView: View {
 // MARK: - Library Browser
 
 struct LibraryBrowserView: View {
-    @EnvironmentObject var jellyfinClient: JellyfinClient
-    @EnvironmentObject var audioEngine: AudioEngine
+    @Environment(JellyfinClient.self) var jellyfinClient
+    @Environment(AudioEngine.self) var audioEngine
     @State private var artists: [BaseItem] = []
     @State private var albums: [BaseItem] = []
     @State private var tracks: [BaseItem] = []
@@ -395,8 +396,8 @@ struct LibraryBrowserView: View {
 // MARK: - Songs
 
 struct SongsView: View {
-    @EnvironmentObject var jellyfinClient: JellyfinClient
-    @EnvironmentObject var audioEngine: AudioEngine
+    @Environment(JellyfinClient.self) var jellyfinClient
+    @Environment(AudioEngine.self) var audioEngine
     @State private var songs: [BaseItem] = []
     @State private var filteredSongs: [BaseItem] = []
     @State private var query = ""
@@ -495,7 +496,7 @@ struct SongsView: View {
 // MARK: - Queue View
 
 struct QueueView: View {
-    @EnvironmentObject var audioEngine: AudioEngine
+    @Environment(AudioEngine.self) var audioEngine
 
     var body: some View {
         if audioEngine.queue.isEmpty {
@@ -575,8 +576,8 @@ struct QueueView: View {
 // MARK: - Search
 
 struct SearchView: View {
-    @EnvironmentObject var jellyfinClient: JellyfinClient
-    @EnvironmentObject var audioEngine: AudioEngine
+    @Environment(JellyfinClient.self) var jellyfinClient
+    @Environment(AudioEngine.self) var audioEngine
     @State private var query = ""
     @State private var results: [BaseItem] = []
     @State private var isSearching = false
@@ -665,7 +666,7 @@ struct SearchView: View {
 // MARK: - Settings
 
 struct SettingsView: View {
-    @EnvironmentObject var jellyfinClient: JellyfinClient
+    @Environment(JellyfinClient.self) var jellyfinClient
 
     var body: some View {
         VStack(spacing: 12) {
@@ -707,7 +708,7 @@ struct SettingsView: View {
 // MARK: - Connection
 
 struct ConnectionView: View {
-    @EnvironmentObject var jellyfinClient: JellyfinClient
+    @Environment(JellyfinClient.self) var jellyfinClient
     @State private var serverURL = ""
     @State private var username = ""
     @State private var password = ""

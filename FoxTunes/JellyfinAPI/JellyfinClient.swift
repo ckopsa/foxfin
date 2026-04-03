@@ -1,4 +1,6 @@
 import Foundation
+import Observation
+import Combine
 
 /// Typed errors for Jellyfin API operations.
 public enum JellyfinError: Error, Equatable {
@@ -24,10 +26,16 @@ public enum JellyfinError: Error, Equatable {
 
 /// Jellyfin REST API client. Handles authentication, library browsing,
 /// search, favorites, playlists, and stream URL construction.
-public class JellyfinClient: ObservableObject {
-    @Published public var isAuthenticated = false
-    @Published public var userId: String?
-    @Published public var serverName: String?
+@Observable
+public class JellyfinClient {
+    public var isAuthenticated = false {
+        didSet { isAuthenticatedChanged.send(isAuthenticated) }
+    }
+    public var userId: String?
+    public var serverName: String?
+
+    // Combine subject for non-SwiftUI observers (SessionReporter)
+    public let isAuthenticatedChanged = PassthroughSubject<Bool, Never>()
 
     public private(set) var serverURL: String?
     private var accessToken: String?

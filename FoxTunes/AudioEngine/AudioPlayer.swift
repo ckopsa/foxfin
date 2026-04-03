@@ -1,6 +1,6 @@
 import AVFoundation
 import Combine
-import Foundation
+import Observation
 
 /// Playback state published to UI via @Published properties.
 public enum PlaybackState: Equatable {
@@ -47,17 +47,26 @@ public struct Track: Equatable {
 /// Uses AVPlayer for HTTP streaming — playback starts immediately without
 /// downloading the full file. The next track's AVPlayerItem is created early
 /// so it pre-buffers for gapless transition.
-public class AudioEngine: ObservableObject {
-    @Published public var state: PlaybackState = .idle
-    @Published public var currentTrack: Track?
-    @Published public var elapsed: TimeInterval = 0
-    @Published public var duration: TimeInterval = 0
-    @Published public var volume: Float = 1.0 {
+@Observable
+public class AudioEngine {
+    public var state: PlaybackState = .idle {
+        didSet { stateChanged.send(state) }
+    }
+    public var currentTrack: Track? {
+        didSet { currentTrackChanged.send(currentTrack) }
+    }
+    public var elapsed: TimeInterval = 0
+    public var duration: TimeInterval = 0
+    public var volume: Float = 1.0 {
         didSet { player.volume = volume }
     }
 
     public var isPlaying: Bool { state == .playing }
+
+    // Combine subjects for non-SwiftUI observers (NowPlayingManager, SessionReporter)
     public let seeked = PassthroughSubject<TimeInterval, Never>()
+    public let stateChanged = PassthroughSubject<PlaybackState, Never>()
+    public let currentTrackChanged = PassthroughSubject<Track?, Never>()
 
     public var currentTrackName: String { currentTrack?.name ?? "Not Playing" }
     public var currentArtistName: String { currentTrack?.artist ?? "" }

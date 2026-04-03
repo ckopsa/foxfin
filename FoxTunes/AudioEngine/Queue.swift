@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// Playback queue with shuffle and repeat modes.
 public enum RepeatMode: Equatable {
@@ -7,11 +8,12 @@ public enum RepeatMode: Equatable {
     case one
 }
 
-public class PlaybackQueue: ObservableObject {
-    @Published public var tracks: [Track] = []
-    @Published public var currentIndex: Int = -1
-    @Published public var shuffleEnabled = false
-    @Published public var repeatMode: RepeatMode = .off
+@Observable
+public class PlaybackQueue {
+    public var tracks: [Track] = []
+    public var currentIndex: Int = -1
+    public var shuffleEnabled = false
+    public var repeatMode: RepeatMode = .off
 
     private var shuffledIndices: [Int] = []
 

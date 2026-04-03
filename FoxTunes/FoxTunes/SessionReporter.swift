@@ -52,7 +52,7 @@ class SessionReporter {
     // MARK: - Playback Reporting
 
     private func observePlayback() {
-        audioEngine.$currentTrack
+        audioEngine.currentTrackChanged
             .receive(on: DispatchQueue.main)
             .sink { [weak self] track in
                 guard let self else { return }
@@ -64,7 +64,7 @@ class SessionReporter {
             }
             .store(in: &cancellables)
 
-        audioEngine.$state
+        audioEngine.stateChanged
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 switch state {
@@ -82,7 +82,7 @@ class SessionReporter {
             .store(in: &cancellables)
 
         // Auto-connect when authenticated
-        jellyfinClient.$isAuthenticated
+        jellyfinClient.isAuthenticatedChanged
             .receive(on: DispatchQueue.main)
             .sink { [weak self] authenticated in
                 if authenticated {

@@ -59,7 +59,7 @@ class NowPlayingManager {
 
     private func observePlaybackState() {
         // Update now playing info when track changes
-        audioEngine.$currentTrack
+        audioEngine.currentTrackChanged
             .receive(on: DispatchQueue.main)
             .sink { [weak self] track in
                 if track != nil {
@@ -71,7 +71,7 @@ class NowPlayingManager {
             .store(in: &cancellables)
 
         // Update playback state
-        audioEngine.$state
+        audioEngine.stateChanged
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 self?.updatePlaybackState(state)
